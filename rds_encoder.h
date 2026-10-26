@@ -102,6 +102,16 @@ struct rds_upsampled_group {
 #define	RDS_PTYN_LENGTH	8
 #define	RDS_RT_LENGTH	64
 
+/* Alternative Frequencies, method A (section 6.2.1.6.2), the first
+ * byte is the number of AFs (224 + N), followed by the AF codes,
+ * padded with the filler code to an even number of bytes */
+#define	RDS_AF_DATA_LEN		12
+#define	RDS_AF_MAX_FREQS	(RDS_AF_DATA_LEN - 1)
+#define	RDS_AF_NUM_BASE		224
+#define	RDS_AF_FILLER		205
+#define	RDS_AF_MIN_FREQ		87.6
+#define	RDS_AF_MAX_FREQ		107.9
+
 struct rds_encoder_state {
 	uint8_t enabled;
 	uint16_t pi;
@@ -126,7 +136,7 @@ struct rds_encoder_state {
 	uint8_t rt_idx:4;
 	uint8_t rt_segments:4;
 	uint8_t rt_flush:1;
-	uint8_t af_data[12];
+	uint8_t af_data[RDS_AF_DATA_LEN];
 	uint8_t af_set:1;
 	uint8_t af_len:4;
 	uint8_t af_idx:4;
@@ -211,6 +221,8 @@ char *rds_get_ptyn(const struct rds_encoder_state *st);
 int rds_set_ptyn(struct rds_encoder_state *st, const char *ptyn);
 char *rds_get_rt(const struct rds_encoder_state *st);
 int rds_set_rt(struct rds_encoder_state *st, const char *rt, int flush);
+int rds_get_af(const struct rds_encoder_state *st, float *freqs);
+int rds_set_af(struct rds_encoder_state *st, const float *freqs, int num_freqs);
 
 /* Abstract getter/setter for bit fields */
 typedef uint8_t (*rds_bf_getter) (const struct rds_encoder_state *);

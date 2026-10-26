@@ -168,9 +168,9 @@ initialize(struct rtp_client *client, int *argc, char **argv[])
 	g_autoptr (GstElement) rtpsrc = NULL;
 
 	gint latency = DEFAULT_LATENCY;
-	gint rtp_port = DEFAULT_BASE_PORT;
-	gint local_rtcp_port = DEFAULT_BASE_PORT + 1;
-	gint remote_rtcp_port = DEFAULT_BASE_PORT + 2;
+	gint rtp_port = 0;
+	gint local_rtcp_port = 0;
+	gint remote_rtcp_port = 0;
 	gint remote_base_port = DEFAULT_BASE_PORT;
 	gint stdout_output = 0;
 	g_autofree gchar *device = NULL;
@@ -207,6 +207,17 @@ initialize(struct rtp_client *client, int *argc, char **argv[])
 		g_printerr("%s\n", help_text);
 		return FALSE;
 	}
+
+	/* JMPXRDS sends RTP from <base port> and RTCP from <base port + 1>
+	 * to the same ports on the receiver, and listens for RTCP on
+	 * <base port + 2> */
+	if (remote_base_port <= 0 || remote_base_port > 65533) {
+		g_printerr("%s\n", help_text);
+		return FALSE;
+	}
+	rtp_port = remote_base_port;
+	local_rtcp_port = remote_base_port + 1;
+	remote_rtcp_port = remote_base_port + 2;
 
 	if (remote_host == NULL) {
 		g_printerr("%s\n", help_text);
@@ -270,7 +281,7 @@ initialize(struct rtp_client *client, int *argc, char **argv[])
 		"rtpbin::rtp-profile", GST_RTP_PROFILE_AVPF,
 		"rtpsrc::caps", client->recv_caps,
 		"rtpsrc::port", rtp_port,
-		"rtcpsrc::port", rtp_port + 1,
+		"rtcpsrc::port", local_rtcp_port,
 		"rtcpsink::host", remote_host,
 		"rtcpsink::port", remote_rtcp_port,
 		"rtcpsink::sync", FALSE,
