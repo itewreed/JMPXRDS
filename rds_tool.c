@@ -47,6 +47,8 @@ void usage(char *name)
 		"\t-ta   <bool>\tSet Traffic Announcement flag (TA)\n"
 		"\t-ms   <bool>\tSet Music/Speech flag (MS)\n"
 		"\t-di   <hex>\tSet Decoder Info (DI)\n"
+		"\t-af   <list>\tSet Alternative Frequencies in MHz, comma separated\n"
+		"\t\t\t(e.g. 87.6,99.1, up to 11, empty string clears them)\n"
 		"\t-dps  <filename>\tUpdate PSN from file (Dynamic PSN)\n"
 		"\t-drt  <filename>\tUpdate RT from file (Dynamic RT)\n"
 		"\t-dt	 <seconds>\tSet a timeout for Dynamic PSN/RT updates\n");
@@ -67,6 +69,7 @@ static const struct option opts[] = {
 	{"dps",	required_argument,0,	12},
 	{"drt",	required_argument,0,	13},
 	{"dt",	required_argument,0,	14},
+	{"af",	required_argument,0,	15},
 	{0,	0,		0,	0}
 };
 
@@ -94,6 +97,12 @@ main(int argc, char *argv[])
 	uint8_t ms = 0;
 	uint8_t di = 0;
 	char temp[TEMP_BUF_LEN] = {0};
+	float af[RDS_AF_MAX_FREQS] = {0};
+	int num_af = 0;
+	char *tok = NULL;
+	char *saveptr = NULL;
+	char *endptr = NULL;
+	int i = 0;
 	struct shm_mapping *shmem = NULL;
 	struct rds_encoder_state *st = NULL;
 	struct rds_dynps_state dps = {0};
@@ -127,7 +136,8 @@ main(int argc, char *argv[])
 				"\tTP: 0x%X\n"
 				"\tTA: 0x%X\n"
 				"\tMS: 0x%X\n"
-				"\tDI: 0x%X\n",
+				"\tDI: 0x%X\n"
+				"\tAF:  ",
 				st->enabled ? "Enabled" : "Disabled",
 				rds_get_pi(st),
 				rds_get_ecc(st),
@@ -140,6 +150,12 @@ main(int argc, char *argv[])
 				rds_get_ta(st),
 				rds_get_ms(st),
 				rds_get_di(st));
+			num_af = rds_get_af(st, af);
+			if (num_af <= 0)
+				utils_info("<Not set>");
+			for (i = 0; i < num_af; i++)
+				utils_info("%s%.1f", i ? ", " : "", af[i]);
+			utils_info("\n");
 			break;
 		case 'e':
 			st->enabled = 1;
@@ -264,10 +280,10 @@ main(int argc, char *argv[])
 			di &= 0xF;
 			ret = rds_set_di(st, di);
 			if (ret < 0) {
-				utils_err("Failed to set MS !\n");
+				utils_err("Failed to set DI !\n");
 				goto cleanup;
 			} else
-				utils_info("MS set:  \t0x%X\n", di);
+				utils_info("DI set:  \t0x%X\n", di);
 			break;
 		case 12: /* Dynamic PSN */
 			ret = rds_dynps_init(&dps, st, optarg);
@@ -284,6 +300,33 @@ main(int argc, char *argv[])
 				goto cleanup;
 			} else
 				loop = 1;
+			break;
+		case 15: /* Alternative Frequencies */
+			num_af = 0;
+			memset(temp, 0, TEMP_BUF_LEN);
+			snprintf(temp, TEMP_BUF_LEN, "%s", optarg);
+			for (tok = strtok_r(temp, ",", &saveptr); tok != NULL;
+			     tok = strtok_r(NULL, ",", &saveptr)) {
+				if (num_af >= RDS_AF_MAX_FREQS) {
+					utils_err("Too many AFs (max %i) !\n",
+						  RDS_AF_MAX_FREQS);
+					ret = -1;
+					goto cleanup;
+				}
+				af[num_af] = strtof(tok, &endptr);
+				if (endptr == tok) {
+					utils_err("Invalid AF: %s\n", tok);
+					ret = -1;
+					goto cleanup;
+				}
+				num_af++;
+			}
+			ret = rds_set_af(st, af, num_af);
+			if (ret < 0) {
+				utils_err("Failed to set AF (valid range is 87.6 - 107.9MHz) !\n");
+				goto cleanup;
+			} else
+				utils_info("AF set:  \t%i frequencies\n", num_af);
 			break;
 		case 14: /* Dynamic PSN/RT Timeout */
 			memset(temp, 0, TEMP_BUF_LEN);
@@ -315,7 +358,9 @@ main(int argc, char *argv[])
 		if(timeout)
 			alarm(timeout);
 		active = 1;
-		while(active);
+		/* sleep() gets interrupted by the signals above */
+		while(active)
+			sleep(1);
 		rds_dynps_destroy(&dps);
 		rds_dynrt_destroy(&drt);
 	}

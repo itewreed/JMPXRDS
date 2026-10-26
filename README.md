@@ -3,7 +3,7 @@ An FM MPX signal generator on top of Jack Audio Connection Kit with support for:
 * Typical DSB modulator
 * Multiple SSB modulators for the stereo subchannel (L-R), plus a mono mode
 * FM pre-emphasis (50us / 75us) and an audio low-pass filter to protect the pilot
-* RDS Encoder with support for all basic fields (PI, PS, PTY, PTYN, RT, TP, TA, MS, DI, ECC, LIC, CT) and dynamic PS / RT from a file
+* RDS Encoder with support for all basic fields (PI, PS, PTY, PTYN, RT, TP, TA, MS, DI, ECC, LIC, AF, CT) and dynamic PS / RT from a file
 * Built-in RTP server for sending the generated signal on a remote site
 
 The generator output has a fixed sampling rate of 192000, it outputs data to a local named pipe (`/run/user/<uid>/jmpxrds.sock`, raw float32 mono, for the GUI to do FFT analysis and/or other uses e.g. netcat/sox/GNU Radio), and through a built-in RTP server. Note that RTP server sends the signal FLAC-encoded to reduce bandwidth. A client for the RTP server is also available as well as a GNU Radio - based receiver for debugging. The signal can be used to drive an FM exciter via a normal sound card. We 've tried this with RPi + HiFi Berry and Odroid + HiFi Shield. JMPXRDS produces the baseband MPX signal only; to transmit it with an SDR such as a HackRF it has to be FM-modulated first (e.g. with GNU Radio and gr-osmosdr, see the documentation).

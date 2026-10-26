@@ -39,7 +39,7 @@ import signal
 from argparse import ArgumentParser
 from gnuradio.eng_arg import eng_float, intx
 from gnuradio import eng_notation
-import math
+import math, os
 import rds
 import threading
 
@@ -609,7 +609,7 @@ class jmpxrds_rx(gr.top_block, Qt.QWidget):
         self.blocks_multiply_const_xx_0 = blocks.multiply_const_ff(0.5*(1.*(audio_volume) / 100), 1)
         self.blocks_keep_one_in_n_0 = blocks.keep_one_in_n(gr.sizeof_char*1, 2)
         self.blocks_float_to_complex_0 = blocks.float_to_complex(1)
-        self.blocks_file_source_0 = blocks.file_source(gr.sizeof_float*1, '/var/run/user/1000/jmpxrds.sock', False, 0, 0)
+        self.blocks_file_source_0 = blocks.file_source(gr.sizeof_float*1, '/run/user/%d/jmpxrds.sock' % os.getuid(), False, 0, 0)
         self.blocks_file_source_0.set_begin_tag(pmt.PMT_NIL)
         self.blocks_complex_to_real_0_0 = blocks.complex_to_real(1)
         self.blocks_complex_to_real_0 = blocks.complex_to_real(1)

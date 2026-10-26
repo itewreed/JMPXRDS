@@ -308,9 +308,9 @@ rds_set_rt(struct rds_encoder_state *st, const char *rt, int flush)
 	memset(st->rt, 0, RDS_RT_LENGTH);
 	for (i = 0; i < rtlen; i++) {
 		if (((rt[i] < 0x20) &&
-		     ((rt[i] != RDS_RT_CR) ||
-		      (rt[i] != RDS_RT_LF) ||
-		      (rt[i] != RDS_RT_END_OF_HEADLINE) ||
+		     ((rt[i] != RDS_RT_CR) &&
+		      (rt[i] != RDS_RT_LF) &&
+		      (rt[i] != RDS_RT_END_OF_HEADLINE) &&
 		      (rt[i] != RDS_RT_SOFT_HYPHEN))) || (rt[i] == 0x7F))
 			st->rt[i] = 0;
 		else
@@ -332,6 +332,69 @@ rds_set_rt(struct rds_encoder_state *st, const char *rt, int flush)
 
 	st->rt_set = 1;
 	st->rt_idx = 0;
+
+	return 0;
+}
+
+int
+rds_get_af(const struct rds_encoder_state *st, float *freqs)
+{
+	int num_freqs = 0;
+	int i = 0;
+
+	if (st == NULL || freqs == NULL)
+		return -1;
+
+	if (!st->af_set)
+		return 0;
+
+	num_freqs = st->af_data[0] - RDS_AF_NUM_BASE;
+	for (i = 0; i < num_freqs; i++)
+		freqs[i] = 87.5 + ((float) st->af_data[i + 1] / 10.0);
+
+	return num_freqs;
+}
+
+int
+rds_set_af(struct rds_encoder_state *st, const float *freqs, int num_freqs)
+{
+	uint8_t af_data[RDS_AF_DATA_LEN] = {0};
+	int af_len = 0;
+	int i = 0;
+
+	if (st == NULL || num_freqs < 0 || num_freqs > RDS_AF_MAX_FREQS)
+		return -1;
+
+	if (num_freqs == 0) {
+		st->af_set = 0;
+		memset(st->af_data, 0, RDS_AF_DATA_LEN);
+		return 0;
+	}
+
+	if (freqs == NULL)
+		return -1;
+
+	af_data[0] = RDS_AF_NUM_BASE + num_freqs;
+	for (i = 0; i < num_freqs; i++) {
+		if (freqs[i] < RDS_AF_MIN_FREQ - 0.05 ||
+		    freqs[i] > RDS_AF_MAX_FREQ + 0.05)
+			return -2;
+		/* AF code = (f - 87.5MHz) / 100KHz */
+		af_data[i + 1] = (uint8_t) ((freqs[i] - 87.5) * 10.0 + 0.5);
+	}
+
+	/* Pad to a full block (two codes per group) */
+	af_len = num_freqs + 1;
+	if (af_len % 2)
+		af_data[af_len++] = RDS_AF_FILLER;
+
+	/* Disable AF while updating so that the encoder
+	 * doesn't send a partial list */
+	st->af_set = 0;
+	memcpy(st->af_data, af_data, RDS_AF_DATA_LEN);
+	st->af_len = af_len;
+	st->af_idx = 0;
+	st->af_set = 1;
 
 	return 0;
 }

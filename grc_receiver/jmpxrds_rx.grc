@@ -385,7 +385,7 @@ blocks:
     alias: ''
     begin_tag: pmt.PMT_NIL
     comment: ''
-    file: /var/run/user/1000/jmpxrds.sock
+    file: '''/run/user/%d/jmpxrds.sock'' % os.getuid()'
     length: '0'
     maxoutbuf: '0'
     minoutbuf: '0'
@@ -657,7 +657,7 @@ blocks:
   parameters:
     alias: ''
     comment: ''
-    imports: import math
+    imports: import math, os
   states:
     bus_sink: false
     bus_source: false

@@ -241,11 +241,10 @@ rds_generate_group_0(const struct rds_encoder *enc, struct rds_group *group,
 	if (version == RDS_GROUP_VERSION_A) {
 		group->blocks[2].infoword = (st->af_data[st->af_idx] << 8) |
 					     st->af_data[st->af_idx + 1];
-		if (st->af_idx >= 10)
+		if (st->af_idx + 2 >= st->af_len)
 			st->af_idx = 0;
 		else
 			st->af_idx += 2;
-		group->blocks[2].infoword = temp_infoword;
 	}
 
 	/* 

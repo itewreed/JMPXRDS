@@ -307,7 +307,7 @@ rds_dynrt_consumer_thread(void *arg)
 		}
 		pthread_mutex_unlock(&drt->dynrt_proc_mutex);
 		rds_dynpsrt_cond_sleep(&drt->sleep_trig, &drt->sleep_mutex,
-				       DYNPS_DELAY_SECS);
+				       DYNRT_DELAY_SECS);
 	}
 
 	utils_dbg("[DYNRT] Consumer terminated\n");

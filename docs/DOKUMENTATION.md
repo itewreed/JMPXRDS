@@ -50,7 +50,7 @@ Funktionen im Überblick:
   Filter-Methode) oder Mono
 * FM-Preemphasis 50 µs (Europa) / 75 µs (USA) oder abgeschaltet
 * Audio-Tiefpass (FFT-FIR) zum Schutz des Pilottons
-* RDS-Encoder mit PI, PS, PTY, PTYN, RT, TP, TA, MS, DI, ECC, LIC und CT (Uhrzeit)
+* RDS-Encoder mit PI, PS, PTY, PTYN, RT, TP, TA, MS, DI, ECC, LIC, AF und CT (Uhrzeit)
 * Dynamisches PS und dynamischer RadioText aus Textdateien
 * Ausgabe über eine lokale FIFO und einen eingebauten RTP-Server (FLAC-komprimiert)
 * Steuerung zur Laufzeit über GTK3-GUI oder Kommandozeilen-Werkzeuge
@@ -323,6 +323,7 @@ Optionen werden mit einfachem Bindestrich angegeben (`getopt_long_only`).
 | `-ta` | 0/1 | Traffic Announcement |
 | `-ms` | 0/1 | Music (1, Standard) / Speech (0) |
 | `-di` | hex 0–F | Decoder Identification: Bit 0 Stereo, Bit 1 Kunstkopf, Bit 2 komprimiert, Bit 3 dynamischer PTY. Standard `0x9` (Stereo + dyn. PTY) |
+| `-af` | Liste in MHz | Alternative Frequenzen, kommagetrennt, z. B. `87.6,99.1` (87,6–107,9 MHz, max. 11). Leerer String `""` löscht die Liste |
 | `-dps` | Datei | Dynamisches PS aus Datei |
 | `-drt` | Datei | Dynamischer RadioText aus Datei |
 | `-dt` | Sekunden | Laufzeitbegrenzung für `-dps`/`-drt` |
@@ -412,7 +413,7 @@ appsrc (F32LE, 192 kHz, mono) → audioconvert → S16LE → flacenc
 
 | Port | Richtung | Inhalt |
 |------|----------|--------|
-| 5000/UDP | Server → Client | RTP (FLAC-Payload) |
+| 5000/UDP | Server → Client | RTP (FLAC-Payload), gesendet vom Quellport 5001 |
 | 5001/UDP | Server → Client | RTCP |
 | 5002/UDP | Client → Server | RTCP-Rückkanal (u. a. NACKs für Retransmission) |
 
@@ -430,11 +431,11 @@ gibt ihn über ALSA auf eine Soundkarte aus, an der der Exciter hängt
 | `-h`, `--remote-host` | – (Pflicht) | IPv4-Adresse des JMPXRDS-Rechners (für den RTCP-Rückkanal) |
 | `-l`, `--latency` | 200 | Jitterbuffer in ms |
 | `-d`, `--device` | `default` | ALSA-Ausgabegerät, z. B. `hw:CARD=ODROIDDAC,DEV=0` |
-| `-p`, `--remote-base-port` | 5000 | wird derzeit nicht ausgewertet (siehe Abschnitt 16) |
+| `-p`, `--remote-base-port` | 5000 | Basisport von JMPXRDS: RTP wird auf diesem Port empfangen, RTCP auf Port+1, der RTCP-Rückkanal geht an Port+2 des Servers |
 | `-o`, `--stdout_output` | 0 | `1` gibt Float32-Rohdaten auf stdout aus statt auf ALSA |
 
-Der Client lauscht fest auf 5000 (RTP) und 5001 (RTCP) und sendet RTCP an
-Port 5002 des Servers. Mit `SIGUSR1` gibt er RTP-Statistiken aus. FLAC-Packet-
+Der Client lauscht standardmäßig auf 5000 (RTP) und 5001 (RTCP) und sendet
+RTCP an Port 5002 des Servers. Mit `SIGUSR1` gibt er RTP-Statistiken aus. FLAC-Packet-
 Loss-Concealment ist aktiviert.
 
 Ablauf:
@@ -448,10 +449,9 @@ jmpxrds_rtp_client -h 192.168.1.10 -d hw:CARD=sndrpihifiberry,DEV=0
 ```
 
 Für den Dauerbetrieb liegen `jmpxrds_rtp_client.service` (SCHED_FIFO 99,
-automatischer Neustart) und `jmpxrds_rtp_client.env` bei. Achtung: Die
-Environment-Datei und die Unit verwenden derzeit die Option `-r`, die der
-Client nicht kennt (siehe Abschnitt 16); vor dem Einsatz `-r $REMOTE_RTCP_PORT`
-aus `ExecStart` entfernen.
+automatischer Neustart) und `jmpxrds_rtp_client.env` bei. In der
+Environment-Datei werden `LATENCY`, `REMOTE_HOST`, `PORT` und `DEVICE`
+eingestellt.
 
 ## 10. GNU-Radio-Empfänger zum Debuggen
 
@@ -464,8 +464,9 @@ liest das MPX-Signal direkt aus der FIFO und zeigt:
 * dekodierte RDS-Daten (57-kHz-Mischung, Costas-Loop, Taktrückgewinnung,
   differentielle Decodierung, `rds.decoder`/`rds.parser`)
 
-Der Pfad `/var/run/user/1000/jmpxrds.sock` ist im Flowgraph fest eingetragen
-und muss bei einer anderen Benutzer-ID angepasst werden.
+Der FIFO-Pfad wird aus der Benutzer-ID des aufrufenden Benutzers gebildet
+(`/run/user/<UID>/jmpxrds.sock`); der Empfänger muss also unter demselben
+Benutzer laufen wie `jmpxrds`.
 
 ```sh
 python3 grc_receiver/jmpxrds_rx.py
@@ -551,7 +552,7 @@ Hinweise:
 
 | Gruppe | Inhalt |
 |--------|--------|
-| 0A / 0B | PS, TA, MS, DI (0A nur, wenn AF gesetzt ist, sonst 0B) |
+| 0A / 0B | PS, TA, MS, DI; 0A zusätzlich AF (Methode A), wenn AF gesetzt ist, sonst 0B |
 | 1A | ECC und LIC (abwechselnd, Variant Code 0 bzw. 3) |
 | 2A | RadioText, 64 Zeichen, mit A/B-Flag |
 | 4A | Uhrzeit und Datum (CT), aus der Systemzeit inkl. Zeitzonen-Offset |
@@ -627,32 +628,37 @@ Achtung: Das Skript beendet laufende `jackd`- und `jmpxrds`-Prozesse per
 
 ## 16. Bekannte Einschränkungen und Auffälligkeiten im Code
 
-Folgende Punkte sind bei der Analyse des Quellcodes aufgefallen. Sie sind hier
-dokumentiert, aber (noch) nicht behoben:
+Folgende Fehler wurden bei der Analyse gefunden und **behoben**:
 
-1. **Kein JACK-Ausgangsport**: `fmmod.h` deklariert `outMPX`, der Port wird
-   aber nie registriert. Das MPX-Signal steht nur über FIFO und RTP zur
-   Verfügung.
-2. **Alternative Frequenzen (AF) praktisch nicht nutzbar**: Es gibt keinen
-   Setter für `af_data`/`af_set`. Außerdem überschreibt `rds_generate_group_0()`
-   in Gruppe 0A den AF-Block direkt wieder mit `temp_infoword`.
-3. **RadioText-Steuerzeichen**: Die Bedingung in `rds_set_rt()` ist durch die
-   `||`-Verknüpfung immer wahr, daher werden auch die erlaubten Zeichen CR, LF,
-   End-of-Headline und Soft-Hyphen entfernt.
-4. **Dynamischer RT wechselt alle 3 statt 10 Sekunden**: Der Consumer-Thread
-   nutzt `DYNPS_DELAY_SECS` statt `DYNRT_DELAY_SECS`.
-5. **RTP-Client-Optionen**: `jmpxrds_rtp_client.env` und die systemd-Unit
-   übergeben `-r`, das der Client nicht kennt; der Start schlägt dadurch fehl.
-   Die Option `-p/--remote-base-port` wird eingelesen, aber nicht verwendet.
-6. **RTCP-Bind-Port**: In `rtp_server.c` wird `bind-port` für den RTCP-Ausgang
-   auf `rtpsink` statt auf `rtcpsink` gesetzt (vermutlich Tippfehler).
-7. **`fmmod_tool`-Hilfetext** nennt andere Standardwerte als der Code (siehe
-   Abschnitt 6.1).
-8. **`rds_tool -di`** meldet „MS set" statt „DI set".
-9. **`rds_tool` mit `-dps`/`-drt`** wartet in einer leeren Schleife
-   (`while(active);`) und belegt dabei einen CPU-Kern voll.
-10. **GRC-Empfänger** hat den FIFO-Pfad für UID 1000 fest eingetragen.
-11. **CI**: `.travis.yml` bezieht sich auf travis-ci.org, das nicht mehr
-    betrieben wird; die Badges in der README zeigen auf das Upstream-Projekt
-    UoC-Radio.
-12. **Nur IPv4** für RTP-Empfänger.
+1. **AF in Gruppe 0A**: `rds_generate_group_0()` überschrieb den AF-Block
+   direkt wieder. Zusätzlich gab es keinen Weg, AF zu setzen. Jetzt gibt es
+   `rds_set_af()`/`rds_get_af()` und `rds_tool -af` (Methode A, bis 11
+   Frequenzen); der Encoder wechselt dann automatisch von 0B auf 0A.
+2. **RadioText-Steuerzeichen**: Die Bedingung in `rds_set_rt()` war durch
+   `||` immer wahr. CR, LF, End-of-Headline und Soft-Hyphen bleiben jetzt
+   erhalten, andere Steuerzeichen werden weiterhin entfernt.
+3. **Dynamischer RT** wechselt jetzt wie vorgesehen alle 10 Sekunden
+   (`DYNRT_DELAY_SECS`) statt alle 3.
+4. **RTP-Client**: `-p/--remote-base-port` wird ausgewertet (RTP auf Port,
+   RTCP auf Port+1, RTCP-Rückkanal an Port+2). Die nicht existierende Option
+   `-r` wurde aus Unit und Environment-Datei entfernt.
+5. **RTP-Server-Ports**: Der Sendeport des RTP-Ausgangs wurde zweimal gesetzt
+   (zuerst Basisport, dann Basisport+1). Effektiv galt Basisport+1, und genau
+   das ist nötig, damit ein Client auf demselben Rechner Port 5000 belegen
+   kann. Die tote erste Zuweisung ist entfernt und das Verhalten kommentiert.
+6. **`fmmod_tool`-Hilfetext** nennt jetzt die tatsächlichen Standardwerte.
+7. **`rds_tool -di`** meldet „DI set".
+8. **`rds_tool -dps/-drt`** wartet jetzt mit `sleep()` statt in einer leeren
+   Schleife und belegt keinen CPU-Kern mehr.
+9. **GRC-Empfänger** ermittelt den FIFO-Pfad aus der aktuellen Benutzer-ID.
+
+Weiterhin offen (bewusst nicht geändert, da Funktionserweiterungen oder
+Infrastruktur):
+
+* **Kein JACK-Ausgangsport**: `fmmod.h` deklariert `outMPX`, der Port wird
+  nie registriert. Das MPX-Signal steht nur über FIFO und RTP zur Verfügung.
+* **AF nur per Kommandozeile**: Die GUI hat noch kein Feld für AF.
+* **CI**: `.travis.yml` bezieht sich auf travis-ci.org, das nicht mehr
+  betrieben wird; die Badges in der README zeigen auf das Upstream-Projekt
+  UoC-Radio.
+* **Nur IPv4** für RTP-Empfänger.

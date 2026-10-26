@@ -617,7 +617,10 @@ rtp_init_network_path(struct rtp_server *rtpsrv)
 	rtpsrv->rtpsink = gst_element_factory_make("multiudpsink", "rtpsink");
 	if (!rtpsrv->rtpsink)
 		return -5;
-	g_object_set(rtpsrv->rtpsink, "bind-port", rtpsrv->baseport, NULL);
+	/* Send RTP from <base port + 1>, not from <base port>, so that a
+	 * client running on the same host can still bind <base port> for
+	 * receiving RTP. */
+	g_object_set(rtpsrv->rtpsink, "bind-port", rtpsrv->baseport + 1, NULL);
 	gst_bin_add(GST_BIN(rtpsrv->pipeline), rtpsrv->rtpsink);
 
 	/* Get the RTP srcpad that was created for session 0 above and
@@ -651,7 +654,6 @@ rtp_init_network_path(struct rtp_server *rtpsrv)
 		return -9;
 	/* no need for synchronisation or preroll on the RTCP sink */
 	g_object_set(rtpsrv->rtcpsink, "async", FALSE, "sync", FALSE, NULL);
-	g_object_set(rtpsrv->rtpsink, "bind-port", rtpsrv->baseport + 1, NULL);
 	gst_bin_add(GST_BIN(rtpsrv->pipeline), rtpsrv->rtcpsink);
 
 	/* Get the RTCP srcpad that was created for session 0 above and
